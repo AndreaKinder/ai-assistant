@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source $HOME/Proyectos/macros/ai-assistant/global_config.sh
+source ./ai-assistants.sh #importar funciones y variables comunes
 
 # Verificar la configuración inicial
 if [ ! -d "$CONFIG_DIR" ]; then
@@ -21,11 +21,13 @@ fi
 
 # Variable para controlar el servidor MCP
 mcp_server_pid=""
+mcp_enabled=false
 
 # Función para iniciar el servidor MCP
 start_mcp_server() {
   if [ -n "$mcp_server_pid" ] && kill -0 $mcp_server_pid 2>/dev/null; then
     info_message "El servidor MCP ya está en ejecución (PID: $mcp_server_pid)"
+    mcp_enabled=true
     return 0
   fi
   
@@ -33,6 +35,7 @@ start_mcp_server() {
     node "$CONFIG_DIR/mcp-server.js" >/tmp/mcp-server.log 2>&1 &
     mcp_server_pid=$!
     info_message "Servidor MCP iniciado en puerto 8080 (PID: $mcp_server_pid)"
+    mcp_enabled=true
     return 0
   else
     info_message "No se encontró el servidor MCP. Configurando..."
@@ -42,9 +45,11 @@ start_mcp_server() {
       node "$CONFIG_DIR/mcp-server.js" >/tmp/mcp-server.log 2>&1 &
       mcp_server_pid=$!
       info_message "Servidor MCP iniciado en puerto 8080 (PID: $mcp_server_pid)"
+      mcp_enabled=true
       return 0
     else
       error_message "No se pudo configurar el servidor MCP."
+      mcp_enabled=false
       return 1
     fi
   fi
@@ -55,6 +60,7 @@ stop_mcp_server() {
   if [ -n "$mcp_server_pid" ]; then
     kill $mcp_server_pid 2>/dev/null
     mcp_server_pid=""
+    mcp_enabled=false
     info_message "Servidor MCP detenido."
   else
     info_message "El servidor MCP no está en ejecución."
@@ -69,10 +75,11 @@ echo -e "  ${CYAN}mcp detener${RESET} - Detiene el servidor MCP"
 echo -e "  ${CYAN}mcp status${RESET} - Muestra el estado del servidor MCP"
 echo -e "  ${CYAN}salir${RESET} - Termina el chat"
 
-# Intentar iniciar el servidor MCP automáticamente
+# Comprobar si existe MCP configurado, pero no intentar iniciarlo automáticamente
 if [ -f "$CONFIG_DIR/mcp-server.js" ]; then
-  info_message "Iniciando servidor MCP..."
-  start_mcp_server
+  info_message "MCP está disponible. Escribe 'mcp iniciar' para activarlo."
+else
+  info_message "MCP no está configurado. Usando Gemini directamente."
 fi
 
 while true; do
@@ -97,21 +104,26 @@ while true; do
     "mcp status")
       if [ -n "$mcp_server_pid" ] && kill -0 $mcp_server_pid 2>/dev/null; then
         info_message "El servidor MCP está en ejecución (PID: $mcp_server_pid)"
+        mcp_enabled=true
       else
         info_message "El servidor MCP no está en ejecución."
         mcp_server_pid=""
+        mcp_enabled=false
       fi
       ;;
     *)
-      echo -e "${FUCHSIA}AI Assistant: ${RESET}${CYAN}Procesando tu consulta...${RESET}"
-      # Si el servidor MCP está activo, usar ese procesamiento
-      if [ -n "$mcp_server_pid" ] && kill -0 $mcp_server_pid 2>/dev/null; then
-        # Procesar con MCP (simplificado para este ejemplo)
-        # En una implementación real, aquí se enviaría la consulta al servidor MCP
-        info_message "Utilizando servidor MCP para procesar la consulta..."
-        # Por ahora, seguimos usando process_with_gemini pero podría modificarse para usar MCP
+      # Si no es un comando especial, procesar con Gemini
+      if [ "$mcp_enabled" = true ] && [ -n "$mcp_server_pid" ] && kill -0 $mcp_server_pid 2>/dev/null; then
+        echo -e "${FUCHSIA}AI Assistant: ${RESET}${CYAN}Procesando tu consulta con MCP...${RESET}"
+        # Aquí iría la implementación real para usar MCP
+        # Por ahora usamos process_with_gemini pero se podría modificar
+        response=$(process_with_gemini "$user_input")
+      else
+        # Usar Gemini directamente sin mensaje informativo
+        response=$(process_with_gemini "$user_input")
       fi
-      response=$(process_with_gemini "$user_input")
+      
+      # Mostrar la respuesta
       echo -e "${FUCHSIA}AI Assistant: ${response}${RESET}"
       ;;
   esac
