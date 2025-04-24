@@ -15,6 +15,8 @@ RESET='\033[0m'          # Restablecer color
 # Directorios de configuración
 CONFIG_DIR="$HOME/.config/ai-assistants"
 PLUGINS_DIR="$CONFIG_DIR/mcp-plugins"
+CONDITIONS_RESPONSE_DIR="$CONFIG_DIR/conditions-response.json"
+MEMORY_DIR="$CONFIG_DIR/conversation_history.json"
 
 # Función para imprimir encabezados
 print_header() {
@@ -219,32 +221,65 @@ EOF
   ai_message "Soporte MCP configurado correctamente."
 }
 
+# Formarmateo de condiciones de respuesta en json
+fomrat_conditions_response() {
+  local conditions_file="$CONDITIONS_RESPONSE_DIR"
+  fomrat_conditions=$(jq -n --arg condition "$condition" '{conditions: [$condition]}')
+  echo "$fomrat_conditions" >"$conditions_file"
+}
+
+# Funcion para configurar condiciones de respuesta\
+
+configure_conditions_response() {
+  echo -e "${CYAN}Por favor, ingrese una condicion:${RESET}"
+  read condition
+  fomrat_conditions_response "${condition}"
+  echo -e "${CYAN}Condición guardada correctamente.${RESET}"
+}
+
 # Función para procesar consultas con Gemini con soporte de memoria
 process_with_gemini() {
   local query="$1"
   local api_key=$(cat "$CONFIG_DIR/gemini_api_key.txt")
-  local memory_file="$CONFIG_DIR/conversation_history.json"
+  local memory_file="${MEMORY_DIR}"
+  local condition_file="${CONDITIONS_RESPONSE_DIR}"
+
+  # Revisar si el archivo de condiciones existe
+  if [ ! -f "$condition_file" ]; then
+    echo '[]' >"$condition_file"
+  fi
+
+  # leer condiciones de respuesta
+  local conditions_response=$(cat "$condition_file")
 
   # Crear archivo de memoria si no existe
   if [ ! -f "$memory_file" ]; then
-    echo '[]' > "$memory_file"
+    echo '[]' >"$memory_file"
   fi
-  
+
   # Leer el historial de conversación
   local conversation_history=$(cat "$memory_file")
-  
+
   # Escapar caracteres especiales en la consulta
   query=$(echo "$query" | sed 's/"/\\"/g')
-  
+
   # Añadir mensaje del usuario al historial
   local updated_history=$(echo "$conversation_history" | jq '. + [{"role":"user","parts":[{"text":"'"$query"'"}]}]')
-  echo "$updated_history" > "$memory_file"
+  echo "$updated_history" >"$memory_file"
+
+  # Envio de consulta a la API de Gemini
+  # Mantenemos el historial y las condiciones separadas para formatear correctamente la petición
   
   # Realizar la petición a la API de Gemini con el historial completo
   response=$(curl -s "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$api_key" \
     -H 'Content-Type: application/json' \
     -X POST \
-    -d "{\"contents\":$updated_history}")
+    -d "{
+      \"contents\": $updated_history,
+      \"systemInstruction\": {
+        \"parts\": [{ \"text\": $(echo "$conditions_response" | jq '.conditions[0]') }]
+      }
+    }")
 
   # Extraer la respuesta
   if command -v jq &>/dev/null; then
@@ -253,11 +288,11 @@ process_with_gemini() {
     # Alternativa básica si jq no está disponible
     assistant_response=$(echo "$response" | grep -o '"text":"[^"]*"' | sed 's/"text":"//;s/"$//')
   fi
-  
+
   # Actualizar el historial con la respuesta del asistente
   updated_history=$(echo "$updated_history" | jq '. + [{"role":"model","parts":[{"text":"'"$assistant_response"'"}]}]')
-  echo "$updated_history" > "$memory_file"
-  
+  echo "$updated_history" >"$memory_file"
+
   echo "$assistant_response"
 }
 
@@ -362,6 +397,12 @@ start_assistant() {
   done
 }
 
+# Borrar memoria
+remove_memory() {
+  rm -f "$MEMORY_DIR"
+  echo -e "${YELLOW}Memoria borrada.${RESET}"
+}
+
 # Menú principal
 main_menu() {
   while true; do
@@ -370,7 +411,9 @@ main_menu() {
     echo -e "2. ${CYAN}Configurar API de Gemini${RESET}"
     echo -e "3. ${CYAN}Configurar GitHub Copilot${RESET}"
     echo -e "4. ${CYAN}Configurar soporte MCP${RESET}"
-    echo -e "5. ${CYAN}Iniciar asistente virtual${RESET}"
+    echo -e "5. ${CYAN}Añadir condiciones de respuesta${RESET}"
+    echo -e "6. ${CYAN}Iniciar asistente virtual${RESET}"
+    echo -e "7. ${CYAN}Borrar memoria${RESET}"
     echo -e "0. ${CYAN}Salir${RESET}"
     echo -e "\n${GREEN}Seleccione una opción: ${RESET}"
     read option
@@ -389,7 +432,13 @@ main_menu() {
       configure_mcp
       ;;
     5)
+      configure_conditions_response
+      ;;
+    6)
       start_assistant
+      ;;
+    7)
+      remove_memory
       ;;
     0)
       echo -e "${YELLOW}¡Hasta pronto!${RESET}"
