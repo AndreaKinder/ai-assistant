@@ -1,130 +1,99 @@
-#!/bin/bash
+# Colores del tema Dracula
+FUCHSIA='\033[38;5;213m' # Color para respuestas de la IA
+GREEN='\033[38;5;84m'    # Color para el usuario
+YELLOW='\033[38;5;228m'  # Color para advertencias/información
+CYAN='\033[38;5;117m'    # Color para comandos/acciones
+PURPLE='\033[38;5;141m'  # Color para títulos
+RESET='\033[0m'          # Restablecer color
 
-source ./ai-assistants.sh #importar funciones y variables comunes
+# Directorios de configuración
+CONFIG_DIR="$HOME/.config/ai-assistants"
+PLUGINS_DIR="$CONFIG_DIR/mcp-plugins"
+CONDITIONS_RESPONSE_DIR="$CONFIG_DIR/conditions-response.json"
+MEMORY_DIR="$CONFIG_DIR/conversation_history.json"
 
-# Verificar la configuración inicial
-if [ ! -d "$CONFIG_DIR" ]; then
-  mkdir -p "$CONFIG_DIR"
-  echo -e "${CYAN}Directorio de configuración creado en $CONFIG_DIR${RESET}"
-fi
-
-if [ ! -f "$CONFIG_DIR/gemini_api_key.txt" ]; then
-  echo -e "${YELLOW}No se encontró la clave API de Gemini. Por favor, configúrela.${RESET}"
-  configure_gemini
-fi
-
-# Crear archivo de memoria si no existe
-if [ ! -f "$MEMORY_DIR" ]; then
-  mkdir -p "$(dirname "$MEMORY_DIR")"
-  echo '[]' > "$MEMORY_DIR"
-fi
-
-# Variable para controlar el servidor MCP
-mcp_server_pid=""
-mcp_enabled=false
-
-# Función para iniciar el servidor MCP
-start_mcp_server() {
-  if [ -n "$mcp_server_pid" ] && kill -0 $mcp_server_pid 2>/dev/null; then
-    info_message "El servidor MCP ya está en ejecución (PID: $mcp_server_pid)"
-    mcp_enabled=true
-    return 0
-  fi
-  
-  if [ -f "$CONFIG_DIR/mcp-server.js" ]; then
-    node "$CONFIG_DIR/mcp-server.js" >/tmp/mcp-server.log 2>&1 &
-    mcp_server_pid=$!
-    info_message "Servidor MCP iniciado en puerto 8080 (PID: $mcp_server_pid)"
-    mcp_enabled=true
-    return 0
-  else
-    info_message "No se encontró el servidor MCP. Configurando..."
-    configure_mcp
-    
-    if [ -f "$CONFIG_DIR/mcp-server.js" ]; then
-      node "$CONFIG_DIR/mcp-server.js" >/tmp/mcp-server.log 2>&1 &
-      mcp_server_pid=$!
-      info_message "Servidor MCP iniciado en puerto 8080 (PID: $mcp_server_pid)"
-      mcp_enabled=true
-      return 0
-    else
-      error_message "No se pudo configurar el servidor MCP."
-      mcp_enabled=false
-      return 1
-    fi
-  fi
+ai_message() {
+  echo -e "${FUCHSIA}AI Assistant: ${1}${RESET}"
 }
 
-# Función para detener el servidor MCP
-stop_mcp_server() {
-  if [ -n "$mcp_server_pid" ]; then
-    kill $mcp_server_pid 2>/dev/null
-    mcp_server_pid=""
-    mcp_enabled=false
-    info_message "Servidor MCP detenido."
-  else
-    info_message "El servidor MCP no está en ejecución."
-  fi
+user_message() {
+  echo -e "${GREEN}User: ${1}${RESET}"
 }
 
-# Iniciar chat con Gemini
-print_header "Chat con Gemini - $(date '+%d de %B de %Y')"
-echo -e "${CYAN}Comandos disponibles:${RESET}"
-echo -e "  ${CYAN}mcp iniciar${RESET} - Inicia el servidor MCP"
-echo -e "  ${CYAN}mcp detener${RESET} - Detiene el servidor MCP"
-echo -e "  ${CYAN}mcp status${RESET} - Muestra el estado del servidor MCP"
-echo -e "  ${CYAN}salir${RESET} - Termina el chat"
+# Función para imprimir información
+info_message() {
+  echo -e "${YELLOW}[INFO] ${1}${RESET}"
+}
 
-# Comprobar si existe MCP configurado, pero no intentar iniciarlo automáticamente
-if [ -f "$CONFIG_DIR/mcp-server.js" ]; then
-  info_message "MCP está disponible. Escribe 'mcp iniciar' para activarlo."
-else
-  info_message "MCP no está configurado. Usando Gemini directamente."
-fi
 
-while true; do
-  echo -e "${GREEN}Usuario > ${RESET}"
-  read user_input
+# Función para procesar consultas con Gemini con soporte de memoria
+process_with_gemini() {
+  local query="$1"
+  local api_key=$(cat "$CONFIG_DIR/gemini_api_key.txt")
+  local memory_file="${MEMORY_DIR}"
+  local condition_file="${CONDITIONS_RESPONSE_DIR}"
+
+  # Revisar si el archivo de condiciones existe
+  if [ ! -f "$condition_file" ]; then
+    echo '[]' >"$condition_file"
+  fi
+
+  # leer condiciones de respuesta
+  local conditions_response=$(cat "$condition_file")
+
+  # Crear archivo de memoria si no existe
+  if [ ! -f "$memory_file" ]; then
+    echo '[]' >"$memory_file"
+  fi
+
+  # Leer el historial de conversación
+  local conversation_history=$(cat "$memory_file")
+
+  # Escapar caracteres especiales en la consulta
+  query=$(echo "$query" | sed 's/"/\\"/g')
+
+  # Añadir mensaje del usuario al historial
+  local updated_history=$(echo "$conversation_history" | jq '. + [{"role":"user","parts":[{"text":"'"$query"'"}]}]')
+  echo "$updated_history" >"$memory_file"
+
+  # Envio de consulta a la API de Gemini
+  # Mantenemos el historial y las condiciones separadas para formatear correctamente la petición
   
-  case "$user_input" in
-    "salir")
-      # Detener el servidor MCP si está en ejecución
-      if [ -n "$mcp_server_pid" ]; then
-        stop_mcp_server
-      fi
-      echo -e "${YELLOW}Chat finalizado. ¡Hasta pronto!${RESET}"
-      break
-      ;;
-    "mcp iniciar")
-      start_mcp_server
-      ;;
-    "mcp detener")
-      stop_mcp_server
-      ;;
-    "mcp status")
-      if [ -n "$mcp_server_pid" ] && kill -0 $mcp_server_pid 2>/dev/null; then
-        info_message "El servidor MCP está en ejecución (PID: $mcp_server_pid)"
-        mcp_enabled=true
-      else
-        info_message "El servidor MCP no está en ejecución."
-        mcp_server_pid=""
-        mcp_enabled=false
-      fi
-      ;;
-    *)
-      # Si no es un comando especial, procesar con Gemini
-      if [ "$mcp_enabled" = true ] && [ -n "$mcp_server_pid" ] && kill -0 $mcp_server_pid 2>/dev/null; then
-        echo -e "${FUCHSIA}AI Assistant: ${RESET}${CYAN}Procesando tu consulta con MCP...${RESET}"
-        # Aquí iría la implementación real para usar MCP
-        # Por ahora usamos process_with_gemini pero se podría modificar
+  # Realizar la petición a la API de Gemini con el historial completo
+  response=$(curl -s "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$api_key" \
+    -H 'Content-Type: application/json' \
+    -X POST \
+    -d "{
+      \"contents\": $updated_history,
+      \"systemInstruction\": {
+        \"parts\": [{ \"text\": $(echo "$conditions_response" | jq '.conditions[0]') }]
+      }
+    }")
+
+  # Extraer la respuesta
+  if command -v jq &>/dev/null; then
+    assistant_response=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text // "Error al procesar la consulta."')
+  else
+    # Alternativa básica si jq no está disponible
+    assistant_response=$(echo "$response" | grep -o '"text":"[^"]*"' | sed 's/"text":"//;s/"$//')
+  fi
+
+  # Actualizar el historial con la respuesta del asistente
+  updated_history=$(echo "$updated_history" | jq '. + [{"role":"model","parts":[{"text":"'"$assistant_response"'"}]}]')
+  echo "$updated_history" >"$memory_file"
+
+  echo "$assistant_response"
+}
+
+# Función para iniciar el asistente con soporte de Gemini
+start_assistant() {
+    while true; do
+        read -p "$(echo -e ${GREEN}User: ${RESET})" user_input
+        echo -e "${FUCHSIA}AI Assistant: Procesando tu consulta...${RESET}"
         response=$(process_with_gemini "$user_input")
-      else
-        # Usar Gemini directamente sin mensaje informativo
-        response=$(process_with_gemini "$user_input")
-      fi
-      
-      # Mostrar la respuesta
-      echo -e "${FUCHSIA}AI Assistant: ${response}${RESET}"
-      ;;
-  esac
-done
+        ai_message "$response"
+    done
+}
+
+# Start the assistant
+start_assistant
