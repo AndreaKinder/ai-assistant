@@ -54,6 +54,14 @@ Una vez iniciado el asistente virtual, puede utilizar comandos como:
 - `mcp status`: Muestra el estado del servidor MCP
 - `salir`: Cierra el asistente
 
+## Próximas Implementaciones
+- 📝 Soporte para prompts personalizados
+- ⚡ Atajos de teclado para prompts frecuentes
+- 📚 Biblioteca de plantillas de prompts
+- 🔖 Sistema de etiquetas para organizar prompts
+- 📊 Estadísticas de uso de prompts
+- 🔄 Sincronización de prompts entre dispositivos
+
 ## Licencia
 Este proyecto está bajo la Licencia MIT. Consulte el archivo [LICENSE](LICENSE) para más detalles.
 
@@ -95,7 +103,6 @@ chmod +x ai-assistants.sh
 ```bash
 ./ai-assistants.sh
 ```
-
 ## Usage
 The script provides an interactive menu with the following options:
 1. Install dependencies
@@ -114,6 +121,16 @@ Once the virtual assistant is started, you can use commands like:
 - `mcp stop`: Stops the MCP server
 - `mcp status`: Shows the MCP server status
 - `exit`: Closes the assistant
+
+
+## Upcoming Features
+- 📝 Support for custom prompts
+- ⚡ Keyboard shortcuts for frequent prompts
+- 📚 Prompt template library
+- 🔖 Prompt tagging system
+- 📊 Prompt usage statistics
+- 🔄 Cross-device prompt synchronization
+
 
 ## License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

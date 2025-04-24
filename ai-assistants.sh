@@ -1,7 +1,6 @@
 #!/bin/bash
 
-# Asistentes virtuales con Gemini y GitHub Copilot - v1.0
-# Script para configurar asistentes de IA con interfaz de terminal usando tema Dracula
+# Asistente virtual con Gemini - v1.0
 # Fecha: 23 de abril de 2025
 
 # Colores del tema Dracula
