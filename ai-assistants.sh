@@ -219,27 +219,46 @@ EOF
   ai_message "Soporte MCP configurado correctamente."
 }
 
-# Función para procesar consultas con Gemini
+# Función para procesar consultas con Gemini con soporte de memoria
 process_with_gemini() {
   local query="$1"
   local api_key=$(cat "$CONFIG_DIR/gemini_api_key.txt")
+  local memory_file="$CONFIG_DIR/conversation_history.json"
 
+  # Crear archivo de memoria si no existe
+  if [ ! -f "$memory_file" ]; then
+    echo '[]' > "$memory_file"
+  fi
+  
+  # Leer el historial de conversación
+  local conversation_history=$(cat "$memory_file")
+  
   # Escapar caracteres especiales en la consulta
   query=$(echo "$query" | sed 's/"/\\"/g')
-
-  # Realizar la petición a la API de Gemini
+  
+  # Añadir mensaje del usuario al historial
+  local updated_history=$(echo "$conversation_history" | jq '. + [{"role":"user","parts":[{"text":"'"$query"'"}]}]')
+  echo "$updated_history" > "$memory_file"
+  
+  # Realizar la petición a la API de Gemini con el historial completo
   response=$(curl -s "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$api_key" \
     -H 'Content-Type: application/json' \
     -X POST \
-    -d "{\"contents\":[{\"parts\":[{\"text\":\"$query\"}]}]}")
+    -d "{\"contents\":$updated_history}")
 
-  # Extraer la respuesta utilizando jq si está disponible, o un método alternativo si no
+  # Extraer la respuesta
   if command -v jq &>/dev/null; then
-    echo "$response" | jq -r '.candidates[0].content.parts[0].text // "Error al procesar la consulta."'
+    assistant_response=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text // "Error al procesar la consulta."')
   else
     # Alternativa básica si jq no está disponible
-    echo "$response" | grep -o '"text":"[^"]*"' | sed 's/"text":"//;s/"$//'
+    assistant_response=$(echo "$response" | grep -o '"text":"[^"]*"' | sed 's/"text":"//;s/"$//')
   fi
+  
+  # Actualizar el historial con la respuesta del asistente
+  updated_history=$(echo "$updated_history" | jq '. + [{"role":"model","parts":[{"text":"'"$assistant_response"'"}]}]')
+  echo "$updated_history" > "$memory_file"
+  
+  echo "$assistant_response"
 }
 
 # Función para iniciar el asistente con soporte de Gemini
