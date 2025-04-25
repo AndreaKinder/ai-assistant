@@ -12,6 +12,7 @@ PLUGINS_DIR="$CONFIG_DIR/mcp-plugins"
 CONDITIONS_RESPONSE_DIR="$CONFIG_DIR/conditions-response.json"
 MEMORY_DIR="$CONFIG_DIR/conversation_history.json"
 
+
 ai_message() {
   echo -e "${FUCHSIA}AI Assistant: ${1}${RESET}"
 }
@@ -26,12 +27,45 @@ info_message() {
 }
 
 
+
+
+# Función para descubrir herramientas disponibles
+discover_mcp_tools() {
+  local tools_array=()
+  for plugin in "$MCP_PLUGINS_DIR"/*.py; do
+    if [ -f "$plugin" ]; then
+      # Extraer descripción y nombre de la herramienta del archivo
+      local tool_name=$(basename "$plugin" .py)
+      local tool_description=$(grep -m 1 "# Description:" "$plugin" | sed 's/# Description: //')
+      tools_array+=("\"$tool_name\": {\"name\": \"$tool_name\", \"description\": \"$tool_description\"}")
+    fi
+  done
+  echo "{$(IFS=,; echo "${tools_array[*]}")}"
+}
+
+# Función para ejecutar una herramienta MCP
+execute_mcp_tool() {
+  local tool_name="$1"
+  local args="$2"
+  local plugin_path="$MCP_PLUGINS_DIR/${tool_name}.py"
+  
+  if [ -f "$plugin_path" ]; then
+    python3 "$plugin_path" "$args"
+    return $?
+  else
+    echo "Herramienta no encontrada: $tool_name"
+    return 1
+  fi
+}
+
+
 # Función para procesar consultas con Gemini con soporte de memoria
 process_with_gemini() {
   local query="$1"
   local api_key=$(cat "$CONFIG_DIR/gemini_api_key.txt")
   local memory_file="${MEMORY_DIR}"
   local condition_file="${CONDITIONS_RESPONSE_DIR}"
+  local mcp_tools=$(discover_mcp_tools)
 
   # Revisar si el archivo de condiciones existe
   if [ ! -f "$condition_file" ]; then
@@ -67,12 +101,27 @@ process_with_gemini() {
       \"contents\": $updated_history,
       \"systemInstruction\": {
         \"parts\": [{ \"text\": $(echo "$conditions_response" | jq '.conditions[0]') }]
-      }
+      },
+      \"tools\": [{
+        \"function_declarations\": $mcp_tools
+      }]
     }")
 
-  # Extraer la respuesta
+ # Extraer la respuesta y verificar si hay llamadas a herramientas
   if command -v jq &>/dev/null; then
-    assistant_response=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text // "Error al procesar la consulta."')
+    if echo "$response" | jq -e '.candidates[0].content.parts[0].functionCall' >/dev/null 2>&1; then
+      local tool_name=$(echo "$response" | jq -r '.candidates[0].content.parts[0].functionCall.name')
+      local tool_args=$(echo "$response" | jq -r '.candidates[0].content.parts[0].functionCall.args')
+      
+      # Ejecutar la herramienta MCP
+      info_message "Ejecutando herramienta MCP: $tool_name"
+      local tool_response=$(execute_mcp_tool "$tool_name" "$tool_args")
+      
+      # Enviar la respuesta de la herramienta de vuelta a Gemini
+      # Código adicional para manejar la respuesta...
+    else
+      assistant_response=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text // "Error al procesar la consulta."')
+    fi
   else
     # Alternativa básica si jq no está disponible
     assistant_response=$(echo "$response" | grep -o '"text":"[^"]*"' | sed 's/"text":"//;s/"$//')

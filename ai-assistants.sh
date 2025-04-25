@@ -135,6 +135,23 @@ configure_copilot() {
   ai_message "GitHub Copilot configurado correctamente."
 }
 
+add_manual_mcp_plugin() {
+  echo "${FUCHSIA}Desea añadir un plugin manualmente al directorio de plugins MCP? (s/n)${RESET}"
+  read -p "${FUCHSIA}Respuesta:${RESET} " add_plugin
+  if [[ "$add_plugin" == "s" ]]; then
+    echo "Por favor, ingrese la ruta del plugin:"
+    read -p "Ruta del plugin: " plugin_path
+    if [ -d "$plugin_path" ]; then
+      cp -r "$plugin_path" "$PLUGINS_DIR/"
+      ai_message "Plugin añadido correctamente."
+    else
+      info_message "La ruta proporcionada no es válida."
+    fi
+  else
+    ai_message "No se añadirá ningún plugin."
+  fi
+}
+
 # Función para configurar soporte MCP (Model Context Protocol)
 configure_mcp() {
   print_header "Configuración de soporte MCP"
@@ -377,6 +394,7 @@ main_menu() {
       configure_copilot
       ;;
     4)
+      add_manual_mcp_plugie
       configure_mcp
       ;;
     5)
